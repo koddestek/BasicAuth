@@ -1,0 +1,145 @@
+// --------------------------------------------------------------------------------------------------------------------
+// <copyright file="MyBasicAuth.cs" company="Koddestek">
+//    My Basic Authencation
+// </copyright>
+// <summary>
+//   The my basic auth.
+// </summary>
+// --------------------------------------------------------------------------------------------------------------------
+namespace ApiBasicAuth.Authencation 
+{
+    using System;
+    using System.Net;
+    using System.Net.Http.Headers;
+    using System.Security.Principal;
+    using System.Text;
+    using System.Threading;
+    using System.Web;
+
+    /// <summary>
+    /// The my basic auth.
+    /// </summary>
+    public class MyBasicAuth : IHttpModule 
+    {
+        /// <summary>
+        /// The realm.
+        /// </summary>
+        private const string Realm = "My Realm";
+
+        /// <summary>
+        /// The ınit.
+        /// </summary>
+        /// <param name="context"> The context. </param>
+        public void Init(HttpApplication context) 
+        {
+            context.AuthenticateRequest += ApplicationStartRequest;
+            context.EndRequest += ApplicationEndRequest;
+        }
+
+        /// <summary>
+        /// The application end request.
+        /// </summary>
+        /// <param name="sender"> The sender. </param>
+        /// <param name="e"> The e. </param>
+        private static void ApplicationEndRequest(object sender, EventArgs e) 
+        {
+            var response = HttpContext.Current.Response;
+
+            if (response.StatusCode == (int)HttpStatusCode.Unauthorized) 
+            {
+                response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
+            }
+        }
+
+        /// <summary>
+        /// The application start request.
+        /// </summary>
+        /// <param name="sender"> The sender. </param>
+        /// <param name="e"> The e. </param>
+        private static void ApplicationStartRequest(object sender, EventArgs e) 
+        {
+            var request = HttpContext.Current.Request;
+            var authHeader = request.Headers["Authorization"];
+            if (authHeader != null) 
+            {
+                var authHeaderVal = AuthenticationHeaderValue.Parse(authHeader);
+
+                // RFC 2617 sec 1.2, "scheme" name is case-insensitive
+                if (authHeaderVal.Scheme.Equals("basic", StringComparison.OrdinalIgnoreCase) && authHeaderVal.Parameter != null) 
+                {
+                    AuthenticateUser(authHeaderVal.Parameter);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The dispose.
+        /// </summary>
+        public void Dispose() 
+        {
+        }
+
+        /// <summary>
+        /// The set principal.
+        /// </summary>
+        /// <param name="principal">
+        /// The principal.
+        /// </param>
+        private static void SetPrincipal(IPrincipal principal) 
+        {
+            Thread.CurrentPrincipal = principal;
+
+            if (HttpContext.Current != null) 
+            {
+                HttpContext.Current.User = principal;
+            }
+        }
+
+        /// <summary>
+        /// The check password.
+        /// </summary>
+        /// <param name="username"> The username. </param>
+        /// <param name="password"> The password. </param>
+        /// <returns> The <see cref="bool"/>. </returns>
+        private static bool CheckPassword(string username, string password) 
+        {
+            return username == "user" && password == "password";
+        }
+
+        /// <summary>
+        /// The authenticate user.
+        /// </summary>
+        /// <param name="credentials"> The credentials. </param>
+        /// <returns>
+        /// The <see cref="bool"/>.
+        /// </returns>
+        private static bool AuthenticateUser(string credentials) 
+        {
+            var validated = false;
+            try 
+            {
+                var encoding = Encoding.GetEncoding("iso-8859-1");
+                credentials = encoding.GetString(Convert.FromBase64String(credentials));
+
+                var separator = credentials.IndexOf(':');
+                var name = credentials.Substring(0, separator);
+                var password = credentials.Substring(separator + 1);
+
+                validated = CheckPassword(name, password);
+                if (validated) 
+                {
+                    var identity = new GenericIdentity(name);
+                    SetPrincipal(new GenericPrincipal(identity, null));
+                }
+            }
+            catch (FormatException) 
+            {
+                // Credentials were not formatted correctly.
+                validated = false;
+
+            }
+
+            return validated;
+        }
+    }
+}
